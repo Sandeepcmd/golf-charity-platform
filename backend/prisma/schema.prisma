@@ -1,0 +1,232 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PENDING
+}
+
+enum SubscriptionPlan {
+  MONTHLY
+  YEARLY
+}
+
+enum DrawStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+}
+
+enum WinnerStatus {
+  PENDING_VERIFICATION
+  VERIFIED
+  REJECTED
+  PAID
+}
+
+model User {
+  id                String             @id @default(uuid())
+  email             String             @unique
+  password          String
+  firstName         String
+  lastName          String
+  phone             String?
+  role              UserRole           @default(USER)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  subscription      Subscription?
+  scores            Score[]
+  entries           DrawEntry[]
+  winners           Winner[]
+  selectedCharity   UserCharity?
+
+  stripeCustomerId  String?            @unique
+
+  @@map("users")
+}
+
+model Subscription {
+  id                String             @id @default(uuid())
+  userId            String             @unique
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  plan              SubscriptionPlan
+  status            SubscriptionStatus @default(PENDING)
+  currentPeriodStart DateTime
+  currentPeriodEnd  DateTime
+
+  stripeSubscriptionId String?         @unique
+  stripePriceId     String?
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@map("subscriptions")
+}
+
+model Score {
+  id                String             @id @default(uuid())
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  score             Int
+  playedAt          DateTime
+  courseName        String?
+  verified          Boolean            @default(false)
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([userId, playedAt])
+  @@map("scores")
+}
+
+model Charity {
+  id                String             @id @default(uuid())
+  name              String             @unique
+  description       String
+  logoUrl           String?
+  website           String?
+  active            Boolean            @default(true)
+
+  totalContributions Decimal          @default(0) @db.Decimal(10, 2)
+
+  userCharities     UserCharity[]
+  contributions     CharityContribution[]
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@map("charities")
+}
+
+model UserCharity {
+  id                String             @id @default(uuid())
+  userId            String             @unique
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  charityId         String
+  charity           Charity            @relation(fields: [charityId], references: [id])
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@map("user_charities")
+}
+
+model CharityContribution {
+  id                String             @id @default(uuid())
+  charityId         String
+  charity           Charity            @relation(fields: [charityId], references: [id])
+
+  amount            Decimal            @db.Decimal(10, 2)
+  source            String
+  month             DateTime
+
+  createdAt         DateTime           @default(now())
+
+  @@map("charity_contributions")
+}
+
+model Draw {
+  id                String             @id @default(uuid())
+  month             DateTime           @unique
+  status            DrawStatus         @default(UPCOMING)
+
+  winningNumbers    Int[]
+
+  prizePool         Decimal            @default(0) @db.Decimal(10, 2)
+  charityAmount     Decimal            @default(0) @db.Decimal(10, 2)
+  operationalAmount Decimal            @default(0) @db.Decimal(10, 2)
+
+  fiveMatchPrize    Decimal            @default(0) @db.Decimal(10, 2)
+  fourMatchPrize    Decimal            @default(0) @db.Decimal(10, 2)
+  threeMatchPrize   Decimal            @default(0) @db.Decimal(10, 2)
+
+  drawDate          DateTime?
+
+  entries           DrawEntry[]
+  winners           Winner[]
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@map("draws")
+}
+
+model DrawEntry {
+  id                String             @id @default(uuid())
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  drawId            String
+  draw              Draw               @relation(fields: [drawId], references: [id], onDelete: Cascade)
+
+  numbers           Int[]
+
+  createdAt         DateTime           @default(now())
+
+  @@unique([userId, drawId])
+  @@index([drawId])
+  @@map("draw_entries")
+}
+
+model Winner {
+  id                String             @id @default(uuid())
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  drawId            String
+  draw              Draw               @relation(fields: [drawId], references: [id], onDelete: Cascade)
+
+  matchCount        Int
+  matchedNumbers    Int[]
+  prizeAmount       Decimal            @db.Decimal(10, 2)
+
+  status            WinnerStatus       @default(PENDING_VERIFICATION)
+
+  proofUrl          String?
+  verificationNotes String?
+  verifiedAt        DateTime?
+  verifiedBy        String?
+  paidAt            DateTime?
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([drawId])
+  @@index([userId])
+  @@map("winners")
+}
+
+model PrizePoolConfig {
+  id                String             @id @default(uuid())
+
+  charityPercentage    Int             @default(10)
+  operationalPercentage Int            @default(20)
+  fiveMatchPercentage  Int             @default(40)
+  fourMatchPercentage  Int             @default(20)
+  threeMatchPercentage Int             @default(10)
+
+  monthlyPrice      Decimal            @db.Decimal(10, 2)
+  yearlyPrice       Decimal            @db.Decimal(10, 2)
+
+  active            Boolean            @default(true)
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@map("prize_pool_configs")
+}
